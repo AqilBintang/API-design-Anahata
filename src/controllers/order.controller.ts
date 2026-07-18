@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { readDB, writeDB, findByIdempotencyKey } from "../db/db";
+import { checkStock, deductStock, readStock } from "../db/stock";
 import type {
   CreateOrderDto,
   OrderStatus,
@@ -59,7 +60,14 @@ export function createOrder(req: Request, res: Response): void {
     }
   }
 
-  // Kalkulasi harga
+  // C. Stock validation
+  const stockError = checkStock(body.items);
+  if (stockError) {
+    sendError(res, 422, "INSUFFICIENT_STOCK", stockError);
+    return;
+  }
+
+  // D. Kalkulasi harga
   const subtotal = calculateSubtotal(body.items);
   const discount = calculateDiscount(subtotal);
   const total = subtotal - discount;
@@ -79,6 +87,9 @@ export function createOrder(req: Request, res: Response): void {
   const orders = readDB();
   orders.push(newOrder);
   writeDB(orders);
+
+  // Kurangi stok setelah order berhasil dibuat
+  deductStock(body.items);
 
   res.status(201).json(newOrder);
 }
@@ -215,4 +226,9 @@ export function updateOrderStatus(req: Request, res: Response): void {
   writeDB(orders);
 
   res.json(orders[index]);
+}
+
+// ─── GET /orders/stock ───────────────────────────────────────────────────────
+export function getStock(_req: Request, res: Response): void {
+  res.json(readStock());
 }

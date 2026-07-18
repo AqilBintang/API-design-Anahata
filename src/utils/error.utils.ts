@@ -5,7 +5,9 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "INVALID_TRANSITION"
   | "UNAUTHORIZED"
-  | "CONFLICT";
+  | "CONFLICT"
+  | "INSUFFICIENT_STOCK"
+  | "RATE_LIMIT_EXCEEDED";
 
 /**
  * Kirim standard error response:

@@ -4,12 +4,15 @@ import {
   getAllOrders,
   getOrderById,
   updateOrderStatus,
+  getStock,
 } from "../controllers/order.controller";
+import { createOrderLimiter } from "../middleware/rateLimiter.middleware";
 
 const router = Router();
 
-router.post("/", createOrder);
+router.post("/", createOrderLimiter, createOrder);
 router.get("/", getAllOrders);
+router.get("/stock", getStock);
 router.get("/:id", getOrderById);
 router.patch("/:id/status", updateOrderStatus);
 

@@ -13,7 +13,7 @@
  */
 
 import "./helpers/testDb"; // must be first — patches the db module
-import { resetStore, getStore } from "./helpers/testDb";
+import { resetStore, getStore, resetStockStore } from "./helpers/testDb";
 import request from "supertest";
 import app from "../app";
 
@@ -27,6 +27,7 @@ beforeAll(() => {
 // Reset in-memory store before each test
 beforeEach(() => {
   resetStore();
+  resetStockStore();
 });
 
 const validBody = {
@@ -153,8 +154,8 @@ describe("POST /orders — Price calculation", () => {
     const res = await post("/orders").send({
       customerName: "Dedi",
       items: [
-        { name: "A", qty: 3, price: 100000 },
-        { name: "B", qty: 2, price: 200000 },
+        { name: "Kopi", qty: 3, price: 100000 },
+        { name: "Teh", qty: 2, price: 200000 },
       ],
     });
     // 3*100000 + 2*200000 = 700000 → discount 5% = 35000 → total 665000
@@ -294,10 +295,10 @@ describe("GET /orders/:id", () => {
 // ─── H. Order Listing ────────────────────────────────────────────────────────
 describe("GET /orders — Listing, filter, sort, pagination", () => {
   beforeEach(async () => {
-    // Seed 3 orders with different statuses
-    await post("/orders").send({ customerName: "A", items: [{ name: "X", qty: 1, price: 10000 }] });
-    await post("/orders").send({ customerName: "B", items: [{ name: "Y", qty: 2, price: 50000 }] });
-    await post("/orders").send({ customerName: "C", items: [{ name: "Z", qty: 1, price: 600000 }] });
+    // Seed 3 orders — gunakan item yang ada di stock mock
+    await post("/orders").send({ customerName: "A", items: [{ name: "Teh", qty: 1, price: 10000 }] });
+    await post("/orders").send({ customerName: "B", items: [{ name: "Nasi Goreng", qty: 2, price: 45000 }] });
+    await post("/orders").send({ customerName: "C", items: [{ name: "Laptop", qty: 1, price: 600000 }] });
   });
 
   it("returns all orders with pagination metadata", async () => {
@@ -334,5 +335,79 @@ describe("GET /orders — Listing, filter, sort, pagination", () => {
     const res = await get("/orders?page=1&limit=2");
     expect(res.body.data).toHaveLength(2);
     expect(res.body.pagination).toMatchObject({ total: 3, page: 1, limit: 2, totalPages: 2 });
+  });
+});
+
+// ─── I. Stock Validation ─────────────────────────────────────────────────────
+describe("POST /orders — Stock validation", () => {
+  it("rejects order when item is not found in stock", async () => {
+    const res = await post("/orders").send({
+      customerName: "Budi",
+      items: [{ name: "Barang Tidak Ada", qty: 1, price: 10000 }],
+    });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("INSUFFICIENT_STOCK");
+    expect(res.body.error.message).toMatch(/not found in stock/);
+  });
+
+  it("rejects order when requested qty exceeds available stock", async () => {
+    // Kopi stock = 100, request 999
+    const res = await post("/orders").send({
+      customerName: "Budi",
+      items: [{ name: "Kopi", qty: 999, price: 15000 }],
+    });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("INSUFFICIENT_STOCK");
+    expect(res.body.error.message).toMatch(/Insufficient stock/);
+  });
+
+  it("deducts stock after successful order", async () => {
+    // Reset stock dengan nilai awal yang diketahui
+    resetStockStore([{ name: "Kopi", stock: 10 }]);
+
+    await post("/orders").send({
+      customerName: "Budi",
+      items: [{ name: "Kopi", qty: 3, price: 15000 }],
+    });
+
+    // Buat order lagi, stok sekarang 7 — masih cukup
+    const res = await post("/orders").send({
+      customerName: "Ani",
+      items: [{ name: "Kopi", qty: 7, price: 15000 }],
+    });
+    expect(res.status).toBe(201);
+
+    // Order berikutnya harus ditolak karena stok habis
+    const res2 = await post("/orders").send({
+      customerName: "Cici",
+      items: [{ name: "Kopi", qty: 1, price: 15000 }],
+    });
+    expect(res2.status).toBe(422);
+    expect(res2.body.error.code).toBe("INSUFFICIENT_STOCK");
+  });
+
+  it("allows order when stock is exactly enough", async () => {
+    resetStockStore([{ name: "Kopi", stock: 5 }]);
+    const res = await post("/orders").send({
+      customerName: "Budi",
+      items: [{ name: "Kopi", qty: 5, price: 15000 }],
+    });
+    expect(res.status).toBe(201);
+  });
+});
+
+// ─── J. GET /orders/stock ────────────────────────────────────────────────────
+describe("GET /orders/stock", () => {
+  it("returns list of stock items", async () => {
+    const res = await get("/orders/stock");
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body[0]).toHaveProperty("name");
+    expect(res.body[0]).toHaveProperty("stock");
+  });
+
+  it("returns 401 without API key", async () => {
+    const res = await request(app).get("/orders/stock");
+    expect(res.status).toBe(401);
   });
 });
