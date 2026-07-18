@@ -1,4 +1,4 @@
-# Order API — Take-Home Test PT Anahata
+# Order API - Take-Home Test PT Anahata
 
 REST API untuk manajemen order menggunakan **Node.js**, **TypeScript**, **Express**, dan **JSON file** sebagai penyimpanan data.
 
