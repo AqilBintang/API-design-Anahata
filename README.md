@@ -57,9 +57,12 @@ PORT=3000
 │   │   └── order.controller.ts     # Logic semua endpoint
 │   ├── db/
 │   │   ├── db.ts                   # Helper baca/tulis JSON
-│   │   └── orders.json             # Database (dibuat otomatis)
+│   │   ├── orders.json             # Database order (dibuat otomatis)
+│   │   ├── stock.ts                # Helper baca/tulis stok
+│   │   └── stock.json              # Database stok (dibuat otomatis)
 │   ├── middleware/
-│   │   └── auth.middleware.ts      # X-API-Key authentication
+│   │   ├── auth.middleware.ts      # X-API-Key authentication
+│   │   └── rateLimiter.middleware.ts # Rate limiting POST /orders
 │   ├── routes/
 │   │   └── order.routes.ts
 │   ├── tests/
@@ -101,6 +104,7 @@ Tanpa key yang valid → `401 Unauthorized`.
 | `GET`   | `/orders`              | Ambil semua order      |
 | `GET`   | `/orders/:id`          | Ambil order by ID      |
 | `PATCH` | `/orders/:id/status`   | Update status order    |
+| `GET`   | `/orders/stock`        | Lihat stok semua item  |
 
 ---
 
@@ -142,6 +146,15 @@ Content-Type: application/json
 |-----------------|--------|
 | >= Rp 500.000   | 5%     |
 | < Rp 500.000    | 0%     |
+
+**Stock Validation:**
+Server mengecek stok sebelum order dibuat:
+- Jika item tidak ditemukan di stok → `422 INSUFFICIENT_STOCK`
+- Jika qty melebihi stok tersedia → `422 INSUFFICIENT_STOCK`
+- Jika berhasil → stok otomatis berkurang sesuai qty yang dipesan
+
+**Rate Limiting:**
+Endpoint `POST /orders` dibatasi **10 request per menit per IP**. Jika melebihi batas → `429 RATE_LIMIT_EXCEEDED`.
 
 **Idempotency:**
 Jika header `Idempotency-Key` dikirim dan key sudah pernah digunakan sebelumnya, server mengembalikan order yang sama (`200 OK`) tanpa membuat duplikat.
@@ -228,6 +241,8 @@ Semua error menggunakan format:
 | `VALIDATION_ERROR`   | 400         | Input tidak valid                 |
 | `NOT_FOUND`          | 404         | Resource tidak ditemukan          |
 | `INVALID_TRANSITION` | 422         | Transisi status tidak diizinkan   |
+| `INSUFFICIENT_STOCK` | 422         | Stok tidak mencukupi atau tidak ditemukan |
+| `RATE_LIMIT_EXCEEDED`| 429         | Terlalu banyak request (max 10/menit) |
 
 ---
 
@@ -237,7 +252,7 @@ Semua error menggunakan format:
 npm test
 ```
 
-31 test cases mencakup:
+37 test cases mencakup:
 - Authentication (missing/invalid API key)
 - Successful order creation
 - Validation errors (customerName, items, qty, price)
@@ -246,6 +261,8 @@ npm test
 - Idempotency
 - Get order by ID
 - Order listing (filter, sort, pagination)
+- Stock validation (item tidak ada, stok kurang, deduct setelah order)
+- GET stock endpoint
 
 ---
 
@@ -285,4 +302,8 @@ curl -X PATCH http://localhost:3000/orders/ord_1234567890_abc12/status \
   -H "Content-Type: application/json" \
   -H "X-API-Key: secret-api-key-anahata" \
   -d '{"status":"cancelled","reason":"Customer changed mind"}'
+
+# Lihat stok semua item
+curl http://localhost:3000/orders/stock \
+  -H "X-API-Key: secret-api-key-anahata"
 ```
